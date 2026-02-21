@@ -102,6 +102,14 @@ For other MCP-compatible clients, use the same basic structure:
 | `LIGHTRAG_BASE_URL` | LightRAG server URL | `http://localhost:9621` | `http://localhost:9621` |
 | `LIGHTRAG_API_KEY` | API key for authentication | None | `lightragsecretkey` |
 
+### Transport Variables
+
+| Variable | Description | Default | Example |
+|----------|-------------|---------|---------|
+| `MCP_TRANSPORT` | Transport type | `streamable-http` | `stdio` |
+| `MCP_HOST` | Bind address for HTTP transport | `0.0.0.0` | `127.0.0.1` |
+| `MCP_PORT` | Port for HTTP transport | `8080` | `3000` |
+
 ### Optional Variables
 
 | Variable | Description | Default | Example |
@@ -234,6 +242,112 @@ For development with debug logging:
   }
 }
 ```
+
+### Streamable HTTP Transport
+
+The server defaults to Streamable HTTP transport, which exposes an HTTP endpoint at `/mcp`. This allows MCP clients to connect over HTTP instead of launching the server as a subprocess.
+
+#### Starting the Server with HTTP Transport
+
+```bash
+# Default: listens on http://0.0.0.0:8080/mcp
+daniel-lightrag-mcp
+
+# Custom host and port
+daniel-lightrag-mcp --transport streamable-http --host 127.0.0.1 --port 3000
+
+# Or via environment variables
+MCP_TRANSPORT=streamable-http MCP_HOST=127.0.0.1 MCP_PORT=3000 daniel-lightrag-mcp
+```
+
+#### Configuring MCP Clients for HTTP Transport
+
+For MCP clients that support connecting to an HTTP endpoint (instead of launching a subprocess), configure them to connect to the server's `/mcp` URL:
+
+```json
+{
+  "mcpServers": {
+    "daniel-lightrag": {
+      "url": "http://localhost:8080/mcp"
+    }
+  }
+}
+```
+
+If the server is running on a remote host or custom port:
+
+```json
+{
+  "mcpServers": {
+    "daniel-lightrag": {
+      "url": "http://your-server-host:8080/mcp"
+    }
+  }
+}
+```
+
+#### Using STDIO Transport with MCP Clients
+
+For MCP clients that launch the server as a subprocess (e.g., Claude Desktop), use STDIO transport:
+
+```json
+{
+  "mcpServers": {
+    "daniel-lightrag": {
+      "command": "python",
+      "args": ["-m", "daniel_lightrag_mcp", "--transport", "stdio"],
+      "env": {
+        "LIGHTRAG_BASE_URL": "http://localhost:9621",
+        "LIGHTRAG_API_KEY": "Insert-LightRAG-API-Key-Here"
+      }
+    }
+  }
+}
+```
+
+Or set the transport via environment variable:
+
+```json
+{
+  "mcpServers": {
+    "daniel-lightrag": {
+      "command": "python",
+      "args": ["-m", "daniel_lightrag_mcp"],
+      "env": {
+        "MCP_TRANSPORT": "stdio",
+        "LIGHTRAG_BASE_URL": "http://localhost:9621",
+        "LIGHTRAG_API_KEY": "Insert-LightRAG-API-Key-Here"
+      }
+    }
+  }
+}
+```
+
+#### Docker with HTTP Transport
+
+```bash
+# Build the image
+docker build -t daniel-lightrag-mcp .
+
+# Run with Streamable HTTP (default) — exposes port 8080
+docker run -p 8080:8080 \
+  -e LIGHTRAG_BASE_URL=http://host.docker.internal:9621 \
+  daniel-lightrag-mcp
+
+# Run with custom port
+docker run -p 3000:3000 \
+  -e MCP_PORT=3000 \
+  -e LIGHTRAG_BASE_URL=http://host.docker.internal:9621 \
+  daniel-lightrag-mcp
+
+# Run with STDIO transport
+docker run -i \
+  -e MCP_TRANSPORT=stdio \
+  -e LIGHTRAG_BASE_URL=http://host.docker.internal:9621 \
+  daniel-lightrag-mcp
+```
+
+Then configure your MCP client to connect to `http://localhost:8080/mcp`.
 
 ## Security Configuration
 

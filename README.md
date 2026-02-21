@@ -76,6 +76,64 @@ export LOG_LEVEL="INFO"                 # Optional
 daniel-lightrag-mcp
 ```
 
+### Transport Configuration
+
+The server supports two MCP transport modes:
+
+| Transport | Description | Use Case |
+|-----------|-------------|----------|
+| `streamable-http` (default) | HTTP-based transport on `/mcp` endpoint | Docker, remote access, web clients |
+| `stdio` | Standard input/output transport | Local MCP clients (e.g., Claude Desktop) |
+
+#### Transport Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MCP_TRANSPORT` | `streamable-http` | Transport type: `stdio` or `streamable-http` |
+| `MCP_HOST` | `0.0.0.0` | Bind address for HTTP transport |
+| `MCP_PORT` | `8080` | Port for HTTP transport |
+
+#### CLI Arguments
+
+```bash
+# Run with Streamable HTTP (default)
+daniel-lightrag-mcp
+
+# Run with STDIO transport
+daniel-lightrag-mcp --transport stdio
+
+# Custom host and port
+daniel-lightrag-mcp --transport streamable-http --host 127.0.0.1 --port 3000
+```
+
+#### Docker Usage
+
+```bash
+# Build the image
+docker build -t daniel-lightrag-mcp .
+
+# Run with Streamable HTTP (default)
+docker run -p 8080:8080 -e LIGHTRAG_BASE_URL=http://host.docker.internal:9621 daniel-lightrag-mcp
+
+# Run with STDIO transport
+docker run -i -e MCP_TRANSPORT=stdio -e LIGHTRAG_BASE_URL=http://host.docker.internal:9621 daniel-lightrag-mcp
+```
+
+#### Connecting to the Streamable HTTP Endpoint
+
+When running with the `streamable-http` transport, the MCP server exposes an HTTP endpoint:
+
+```
+http://<host>:<port>/mcp
+```
+
+For example, with default settings:
+```
+http://localhost:8080/mcp
+```
+
+MCP clients that support HTTP transport can connect directly to this URL instead of launching the server as a subprocess.
+
 ## Configuration
 
 The server expects LightRAG to be running on `http://localhost:9621` by default. Make sure your LightRAG server is started before running this MCP server.

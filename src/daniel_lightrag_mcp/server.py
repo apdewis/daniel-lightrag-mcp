@@ -2113,8 +2113,78 @@ async def handle_call_tool(self, request: CallToolRequest) -> dict:
         return _create_error_response(e, tool_name)
 
 
-async def main():
-    """Main entry point for the MCP server."""
+async def run_streamable_http(host: str = "0.0.0.0", port: int = 8080):
+    """Run the MCP server with Streamable HTTP transport."""
+    from starlette.applications import Starlette
+    from starlette.routing import Mount
+    from mcp.server.streamable_http import StreamableHTTPServerTransport
+    import uvicorn
+
+    logger.info("STREAMABLE HTTP TRANSPORT SETUP:")
+    logger.info(f"  - Host: {host}")
+    logger.info(f"  - Port: {port}")
+    logger.info(f"  - Endpoint: /mcp")
+
+    # Create the transport (mcp_session_id=None for stateless operation)
+    transport = StreamableHTTPServerTransport(mcp_session_id=None)
+
+    # Create Starlette ASGI app
+    # Mount at /mcp - clients should use /mcp/ (Starlette auto-redirects /mcp to /mcp/)
+    app = Starlette(
+        debug=False,
+        routes=[Mount("/mcp", app=transport.handle_request)],
+    )
+
+    logger.info("  - Starlette app created with /mcp mount")
+
+    # Initialize server capabilities
+    capabilities = server.get_capabilities(
+        notification_options=NotificationOptions(),
+        experimental_capabilities={},
+    )
+    init_options = InitializationOptions(
+        server_name="daniel-lightrag-mcp",
+        server_version="0.1.0",
+        capabilities=capabilities,
+    )
+
+    # Run the MCP server with the transport streams and uvicorn concurrently
+    async with transport.connect() as (read_stream, write_stream):
+        logger.info("  - Transport connected, starting MCP server and uvicorn")
+
+        # Start MCP server.run as a background task
+        server_task = asyncio.create_task(
+            server.run(read_stream, write_stream, init_options)
+        )
+
+        # Run uvicorn
+        config = uvicorn.Config(
+            app,
+            host=host,
+            port=port,
+            log_level=os.environ.get("LOG_LEVEL", "info").lower(),
+        )
+        uvicorn_server = uvicorn.Server(config)
+
+        logger.info(f"  - Starting uvicorn on {host}:{port}")
+        await uvicorn_server.serve()
+
+        # Cancel server task when uvicorn stops
+        server_task.cancel()
+        try:
+            await server_task
+        except asyncio.CancelledError:
+            pass
+
+
+async def main(transport: str = None, host: str = None, port: int = None):
+    """Main entry point for the MCP server.
+    
+    Args:
+        transport: Transport type ("stdio" or "streamable-http"). Overrides MCP_TRANSPORT env var.
+        host: Host to bind to for HTTP transport. Overrides MCP_HOST env var.
+        port: Port to bind to for HTTP transport. Overrides MCP_PORT env var.
+    """
     logger.info("=" * 100)
     logger.info("STARTING LIGHTRAG MCP SERVER")
     logger.info("=" * 100)
@@ -2134,6 +2204,17 @@ async def main():
         if 'LIGHTRAG' in key.upper() or 'MCP' in key.upper():
             logger.info(f"  - {key}: {value}")
     
+    # Determine transport configuration (parameters override env vars)
+    transport_type = (transport or os.environ.get("MCP_TRANSPORT", "streamable-http")).lower().strip()
+    mcp_host = host or os.environ.get("MCP_HOST", "0.0.0.0")
+    mcp_port = port or int(os.environ.get("MCP_PORT", "8080"))
+
+    logger.info("TRANSPORT CONFIGURATION:")
+    logger.info(f"  - Transport type: {transport_type}")
+    if transport_type == "streamable-http":
+        logger.info(f"  - Host: {mcp_host}")
+        logger.info(f"  - Port: {mcp_port}")
+
     try:
         logger.info("SERVER INITIALIZATION:")
         logger.info("  - Validating server configuration...")
@@ -2141,39 +2222,50 @@ async def main():
         logger.info(f"  - Server object: {server}")
         logger.info(f"  - Server type: {type(server)}")
         
-        logger.info("STDIO SERVER SETUP:")
-        async with stdio_server() as (read_stream, write_stream):
-            logger.info("  - STDIO server context entered successfully")
-            logger.info(f"  - Read stream: {read_stream}")
-            logger.info(f"  - Write stream: {write_stream}")
-            logger.info("  - MCP server initialized, starting communication loop")
-            
-            # Initialize server capabilities
-            logger.info("CAPABILITIES INITIALIZATION:")
-            capabilities = server.get_capabilities(
-                notification_options=NotificationOptions(),
-                experimental_capabilities={},
+        if transport_type == "stdio":
+            logger.info("STDIO SERVER SETUP:")
+            async with stdio_server() as (read_stream, write_stream):
+                logger.info("  - STDIO server context entered successfully")
+                logger.info(f"  - Read stream: {read_stream}")
+                logger.info(f"  - Write stream: {write_stream}")
+                logger.info("  - MCP server initialized, starting communication loop")
+                
+                # Initialize server capabilities
+                logger.info("CAPABILITIES INITIALIZATION:")
+                capabilities = server.get_capabilities(
+                    notification_options=NotificationOptions(),
+                    experimental_capabilities={},
+                )
+                logger.info(f"  - Server capabilities: {capabilities}")
+                logger.info(f"  - Capabilities type: {type(capabilities)}")
+                
+                # Create initialization options
+                init_options = InitializationOptions(
+                    server_name="daniel-lightrag-mcp",
+                    server_version="0.1.0",
+                    capabilities=capabilities,
+                )
+                logger.info(f"INITIALIZATION OPTIONS:")
+                logger.info(f"  - Init options: {init_options}")
+                logger.info(f"  - Init options type: {type(init_options)}")
+                
+                logger.info("STARTING SERVER RUN LOOP:")
+                await server.run(
+                    read_stream,
+                    write_stream,
+                    init_options,
+                )
+
+        elif transport_type == "streamable-http":
+            await run_streamable_http(mcp_host, mcp_port)
+
+        else:
+            raise ValueError(
+                f"Unknown transport type: '{transport_type}'. "
+                f"Supported values: 'stdio', 'streamable-http'. "
+                f"Set via MCP_TRANSPORT environment variable or --transport CLI flag."
             )
-            logger.info(f"  - Server capabilities: {capabilities}")
-            logger.info(f"  - Capabilities type: {type(capabilities)}")
-            
-            # Create initialization options
-            init_options = InitializationOptions(
-                server_name="daniel-lightrag-mcp",
-                server_version="0.1.0",
-                capabilities=capabilities,
-            )
-            logger.info(f"INITIALIZATION OPTIONS:")
-            logger.info(f"  - Init options: {init_options}")
-            logger.info(f"  - Init options type: {type(init_options)}")
-            
-            logger.info("STARTING SERVER RUN LOOP:")
-            await server.run(
-                read_stream,
-                write_stream,
-                init_options,
-            )
-            
+
     except KeyboardInterrupt:
         logger.info("SERVER SHUTDOWN:")
         logger.info("  - Server shutdown requested by user (KeyboardInterrupt)")

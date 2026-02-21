@@ -2,6 +2,7 @@
 # Daniel LightRAG MCP Server Dockerfile
 # =============================================================================
 # This Dockerfile builds the MCP server for LightRAG integration.
+# Supports both STDIO and Streamable HTTP transports (default: Streamable HTTP).
 # The server expects an external LightRAG instance to be available.
 # =============================================================================
 
@@ -31,9 +32,10 @@ RUN pip install --no-cache-dir --no-build-isolation -e .
 # -----------------------------------------------------------------------------
 FROM python:3.11-slim AS runtime
 
-# Install runtime dependencies (openssl for secure connections)
+# Install runtime dependencies (openssl for secure connections, curl for healthcheck)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     openssl \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security
@@ -62,13 +64,16 @@ USER appuser
 ENV LIGHTRAG_BASE_URL=http://localhost:9621
 ENV LIGHTRAG_TIMEOUT=30
 ENV LOG_LEVEL=INFO
+ENV MCP_TRANSPORT=streamable-http
+ENV MCP_HOST=0.0.0.0
+ENV MCP_PORT=8080
 
-# Expose default port (if needed for future network features)
-EXPOSE 9621
+# Expose MCP Streamable HTTP transport port
+EXPOSE 8080
 
-# Health check to verify Python is working
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import daniel_lightrag_mcp" || exit 1
+# Health check - tries curl first (streamable-http mode), falls back to Python import (stdio mode)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:${MCP_PORT}/mcp || python -c "import daniel_lightrag_mcp" || exit 1
 
 # Default command - runs the MCP server
 CMD ["python", "-m", "daniel_lightrag_mcp"]

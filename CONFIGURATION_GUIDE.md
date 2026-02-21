@@ -86,6 +86,74 @@ curl http://localhost:9621/health
 - `LIGHTRAG_API_KEY`: API key for authentication (optional)
 - `LIGHTRAG_TIMEOUT`: Request timeout in seconds (default: 30.0)
 - `LOG_LEVEL`: Logging level - DEBUG, INFO, WARNING, ERROR (default: "INFO")
+- `MCP_TRANSPORT`: Transport type - `stdio` or `streamable-http` (default: "streamable-http")
+- `MCP_HOST`: Bind address for HTTP transport (default: "0.0.0.0")
+- `MCP_PORT`: Port for HTTP transport (default: 8080)
+
+### Transport Selection
+
+The server supports two transport modes:
+
+| Transport | Description | Use Case |
+|-----------|-------------|----------|
+| `streamable-http` (default) | HTTP-based transport on `/mcp` endpoint | Docker, remote access, web clients |
+| `stdio` | Standard input/output transport | Local MCP clients (e.g., Claude Desktop) |
+
+#### Using STDIO Transport (for local MCP clients)
+
+```json
+{
+  "mcpServers": {
+    "daniel-lightrag": {
+      "command": "python",
+      "args": ["-m", "daniel_lightrag_mcp", "--transport", "stdio"],
+      "env": {
+        "LIGHTRAG_BASE_URL": "http://localhost:9621",
+        "LOG_LEVEL": "INFO"
+      }
+    }
+  }
+}
+```
+
+Alternatively, set the transport via environment variable:
+
+```json
+{
+  "mcpServers": {
+    "daniel-lightrag": {
+      "command": "python",
+      "args": ["-m", "daniel_lightrag_mcp"],
+      "env": {
+        "MCP_TRANSPORT": "stdio",
+        "LIGHTRAG_BASE_URL": "http://localhost:9621"
+      }
+    }
+  }
+}
+```
+
+#### Using Streamable HTTP Transport (default)
+
+Start the server (it will listen on `http://0.0.0.0:8080/mcp` by default):
+
+```bash
+daniel-lightrag-mcp
+# or with custom host/port:
+daniel-lightrag-mcp --transport streamable-http --host 127.0.0.1 --port 3000
+```
+
+MCP clients that support HTTP transport can connect to the `/mcp` endpoint URL directly (e.g., `http://localhost:8080/mcp`).
+
+#### Docker with Transport Configuration
+
+```bash
+# Run with Streamable HTTP (default) — exposes port 8080
+docker run -p 8080:8080 -e LIGHTRAG_BASE_URL=http://host.docker.internal:9621 daniel-lightrag-mcp
+
+# Run with STDIO transport
+docker run -i -e MCP_TRANSPORT=stdio -e LIGHTRAG_BASE_URL=http://host.docker.internal:9621 daniel-lightrag-mcp
+```
 
 ### Example with Custom Configuration
 ```json
