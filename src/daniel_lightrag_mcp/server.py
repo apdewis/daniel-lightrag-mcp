@@ -2114,10 +2114,23 @@ async def handle_call_tool(self, request: CallToolRequest) -> dict:
 
 
 async def run_streamable_http(host: str = "0.0.0.0", port: int = 8080):
-    """Run the MCP server with Streamable HTTP transport."""
+    """Run the MCP server with Streamable HTTP transport.
+    
+    Uses StreamableHTTPSessionManager to manage concurrent MCP sessions
+    efficiently. Each incoming connection gets its own transport and server
+    task, enabling multiple clients (e.g., LibreChat) to connect simultaneously.
+    
+    The session manager operates in stateless mode by default, creating a fresh
+    transport per request. This avoids session affinity issues and works well
+    with clients that don't maintain persistent connections.
+    """
+    import contextlib
+    from collections.abc import AsyncIterator
     from starlette.applications import Starlette
     from starlette.routing import Mount
-    from mcp.server.streamable_http import StreamableHTTPServerTransport
+    from starlette.middleware import Middleware
+    from starlette.middleware.cors import CORSMiddleware
+    from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
     import uvicorn
 
     logger.info("STREAMABLE HTTP TRANSPORT SETUP:")
@@ -2125,56 +2138,60 @@ async def run_streamable_http(host: str = "0.0.0.0", port: int = 8080):
     logger.info(f"  - Port: {port}")
     logger.info(f"  - Endpoint: /mcp")
 
-    # Create the transport (mcp_session_id=None for stateless operation)
-    transport = StreamableHTTPServerTransport(mcp_session_id=None)
+    # Create the session manager — handles concurrent sessions as a worker pool.
+    # stateless=True: each request gets a fresh transport (no session tracking),
+    # which is compatible with clients like LibreChat that may not maintain
+    # persistent MCP sessions.
+    session_manager = StreamableHTTPSessionManager(
+        app=server,
+        stateless=True,
+        json_response=False,
+    )
 
-    # Create Starlette ASGI app
-    # Mount at /mcp - clients should use /mcp/ (Starlette auto-redirects /mcp to /mcp/)
+    logger.info("  - StreamableHTTPSessionManager created (stateless mode)")
+
+    # Lifespan context manager for Starlette — starts/stops the session manager
+    @contextlib.asynccontextmanager
+    async def lifespan(app: Starlette) -> AsyncIterator[None]:
+        async with session_manager.run():
+            logger.info("  - Session manager started")
+            yield
+            logger.info("  - Session manager shutting down")
+
+    # Create Starlette ASGI app with:
+    # - Mount with the session manager's ASGI handle_request
+    # - CORS middleware for browser-based and proxy clients (e.g., LibreChat)
+    # - Lifespan for proper session manager lifecycle
     app = Starlette(
         debug=False,
-        routes=[Mount("/mcp", app=transport.handle_request)],
+        routes=[
+            Mount("/mcp", app=session_manager.handle_request),
+        ],
+        middleware=[
+            Middleware(
+                CORSMiddleware,
+                allow_origins=["*"],
+                allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+                allow_headers=["*"],
+                expose_headers=["mcp-session-id"],
+            ),
+        ],
+        lifespan=lifespan,
     )
 
-    logger.info("  - Starlette app created with /mcp mount")
+    logger.info("  - Starlette app created with /mcp route, CORS enabled")
 
-    # Initialize server capabilities
-    capabilities = server.get_capabilities(
-        notification_options=NotificationOptions(),
-        experimental_capabilities={},
+    # Run uvicorn
+    config = uvicorn.Config(
+        app,
+        host=host,
+        port=port,
+        log_level=os.environ.get("LOG_LEVEL", "info").lower(),
     )
-    init_options = InitializationOptions(
-        server_name="daniel-lightrag-mcp",
-        server_version="0.1.0",
-        capabilities=capabilities,
-    )
+    uvicorn_server = uvicorn.Server(config)
 
-    # Run the MCP server with the transport streams and uvicorn concurrently
-    async with transport.connect() as (read_stream, write_stream):
-        logger.info("  - Transport connected, starting MCP server and uvicorn")
-
-        # Start MCP server.run as a background task
-        server_task = asyncio.create_task(
-            server.run(read_stream, write_stream, init_options)
-        )
-
-        # Run uvicorn
-        config = uvicorn.Config(
-            app,
-            host=host,
-            port=port,
-            log_level=os.environ.get("LOG_LEVEL", "info").lower(),
-        )
-        uvicorn_server = uvicorn.Server(config)
-
-        logger.info(f"  - Starting uvicorn on {host}:{port}")
-        await uvicorn_server.serve()
-
-        # Cancel server task when uvicorn stops
-        server_task.cancel()
-        try:
-            await server_task
-        except asyncio.CancelledError:
-            pass
+    logger.info(f"  - Starting uvicorn on {host}:{port}")
+    await uvicorn_server.serve()
 
 
 async def main(transport: str = None, host: str = None, port: int = None):

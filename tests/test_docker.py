@@ -261,3 +261,99 @@ class TestDockerStreamableHTTP:
         # The exact behavior depends on the SDK version
         assert response.status_code in (200, 400, 405, 406), \
             f"Unexpected status for GET: {response.status_code}"
+
+    def test_concurrent_requests(self, docker_container):
+        """Test that multiple concurrent MCP requests are handled correctly.
+        
+        This verifies the StreamableHTTPSessionManager worker pool handles
+        concurrent sessions without blocking or errors.
+        """
+        import concurrent.futures
+
+        def send_initialize(client_name: str, request_id: int):
+            return httpx.post(
+                f"http://localhost:{MCP_PORT}/mcp",
+                json={
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2025-03-26",
+                        "capabilities": {},
+                        "clientInfo": {"name": client_name, "version": "1.0"},
+                    },
+                },
+                headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json, text/event-stream",
+                },
+                timeout=10.0,
+                follow_redirects=True,
+            )
+
+        # Send 5 concurrent requests
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [
+                executor.submit(send_initialize, f"client-{i}", i)
+                for i in range(5)
+            ]
+            results = [f.result() for f in concurrent.futures.as_completed(futures)]
+
+        # All requests should succeed
+        for response in results:
+            assert response.status_code == 200, \
+                f"Concurrent request failed with {response.status_code}: {response.text}"
+
+    def test_cors_preflight(self, docker_container):
+        """Test that CORS preflight requests are handled correctly.
+        
+        LibreChat and other browser-based clients may send OPTIONS preflight
+        requests before actual MCP requests.
+        """
+        response = httpx.options(
+            f"http://localhost:{MCP_PORT}/mcp",
+            headers={
+                "Origin": "http://localhost:3080",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "Content-Type",
+            },
+            timeout=10.0,
+            follow_redirects=True,
+        )
+        assert response.status_code == 200, \
+            f"CORS preflight failed with {response.status_code}: {response.text}"
+        assert "access-control-allow-origin" in response.headers, \
+            "Missing Access-Control-Allow-Origin header"
+
+    def test_cors_headers_on_post(self, docker_container):
+        """Test that CORS headers are present on POST responses."""
+        response = httpx.post(
+            f"http://localhost:{MCP_PORT}/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-03-26",
+                    "capabilities": {},
+                    "clientInfo": {"name": "cors-test", "version": "1.0"},
+                },
+            },
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json, text/event-stream",
+                "Origin": "http://localhost:3080",
+            },
+            timeout=10.0,
+            follow_redirects=True,
+        )
+        assert response.status_code == 200, \
+            f"POST with Origin failed with {response.status_code}"
+        assert response.headers.get("access-control-allow-origin") == "*", \
+            f"Expected CORS allow-origin *, got: {response.headers.get('access-control-allow-origin')}"
+
+    def test_session_manager_in_logs(self, docker_container):
+        """Test that container logs show StreamableHTTPSessionManager startup."""
+        logs = get_container_logs()
+        assert "StreamableHTTPSessionManager" in logs or "session manager" in logs.lower(), \
+            f"Expected session manager messages in logs:\n{logs}"

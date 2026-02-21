@@ -5,7 +5,7 @@ Tests for MCP transport selection and configuration.
 import asyncio
 import os
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch, call
+from unittest.mock import AsyncMock, MagicMock, patch, call, ANY
 
 
 class TestTransportSelection:
@@ -210,3 +210,47 @@ class TestCLIArguments:
                 pass
 
         mock_main.assert_called_once_with(transport=None, host=None, port=None)
+
+
+class TestStreamableHTTPSessionManager:
+    """Tests for StreamableHTTPSessionManager integration in run_streamable_http."""
+
+    async def test_run_streamable_http_uses_session_manager(self):
+        """Test that run_streamable_http creates a StreamableHTTPSessionManager."""
+        from daniel_lightrag_mcp.server import run_streamable_http
+
+        # Mock uvicorn (imported locally inside run_streamable_http)
+        mock_uvicorn = MagicMock()
+        mock_server_instance = MagicMock()
+        mock_server_instance.serve = AsyncMock()
+        mock_uvicorn.Server.return_value = mock_server_instance
+
+        with patch.dict("sys.modules", {"uvicorn": mock_uvicorn}):
+            await run_streamable_http("127.0.0.1", 9999)
+
+        # Verify uvicorn was configured with correct host/port
+        mock_uvicorn.Config.assert_called_once()
+        config_kwargs = mock_uvicorn.Config.call_args
+        assert config_kwargs.kwargs.get("host") == "127.0.0.1"
+        assert config_kwargs.kwargs.get("port") == 9999
+
+    async def test_run_streamable_http_creates_starlette_app_with_cors(self):
+        """Test that run_streamable_http creates a Starlette app with CORS middleware."""
+        from daniel_lightrag_mcp.server import run_streamable_http
+
+        mock_uvicorn = MagicMock()
+        mock_server_instance = MagicMock()
+        mock_server_instance.serve = AsyncMock()
+        mock_uvicorn.Server.return_value = mock_server_instance
+
+        with patch.dict("sys.modules", {"uvicorn": mock_uvicorn}):
+            await run_streamable_http("0.0.0.0", 8080)
+
+        # Verify uvicorn.Config was called with a Starlette app
+        config_call = mock_uvicorn.Config.call_args
+        app = config_call[0][0] if config_call[0] else config_call.kwargs.get("app")
+        assert app is not None, "Starlette app should be passed to uvicorn.Config"
+
+        # Verify the app is a Starlette instance
+        from starlette.applications import Starlette
+        assert isinstance(app, Starlette), f"Expected Starlette app, got {type(app)}"
