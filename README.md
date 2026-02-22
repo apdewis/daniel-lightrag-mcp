@@ -2,6 +2,13 @@
 
 A comprehensive MCP (Model Context Protocol) server that provides **100% functional** integration with LightRAG API, offering **22 fully working tools** across 4 categories for complete document management, querying, knowledge graph operations, and system management.
 
+This is a modified version of the upstream version that has had streaming-http mode addes as well as a docker image buildfile.
+
+## Disclaimer
+
+Modifications were made entirely using KiloCode and Claude Opus 4.6, I don't warrant that this works properly or should be trusted for production use at this time.
+
+
 ## 🎉 Status: 100% Functional
 
 **All 22 tools are working perfectly** after comprehensive testing and optimization:
