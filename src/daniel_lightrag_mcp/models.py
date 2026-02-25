@@ -422,3 +422,19 @@ class DocsStatusesResponse(BaseModel):
     """Response model for multiple document statuses."""
     statuses: List[DocStatusResponse] = Field(default_factory=list)
     total: int = Field(0, ge=0)
+
+
+# Multimodal Asset Models
+
+class MultimodalAssetBase64Response(BaseModel):
+    """Response model for base64-encoded multimodal asset retrieval."""
+    file_path: str = Field(..., description="Relative path to the image file")
+    mime_type: str = Field(..., description="MIME type of the image (e.g. image/png)")
+    data: str = Field(..., description="Base64-encoded image data")
+    size_bytes: int = Field(..., description="Original file size in bytes")
+
+
+class MultimodalAssetURLResponse(BaseModel):
+    """Response model for multimodal asset URL retrieval."""
+    file_path: str = Field(..., description="Relative path to the image file")
+    url: str = Field(..., description="Full authenticated URL to access the image")

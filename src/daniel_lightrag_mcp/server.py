@@ -71,6 +71,8 @@ def _validate_tool_arguments(tool_name: str, arguments: Dict[str, Any]) -> None:
         "delete_entity": ["entity_id"],
         "delete_relation": ["relation_id"],
         "get_track_status": ["track_id"],
+        "get_multimodal_asset_base64": ["file_path"],
+        "get_multimodal_asset_url": ["file_path"],
     }
     
     # Check if tool requires specific arguments
@@ -649,6 +651,42 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
         ),
     ])
     
+    # Multimodal Asset Tools (2 tools)
+    multimodal_mode = os.getenv("MULTIMODAL_ASSET_MODE", "base64").lower().strip()
+    base64_default_note = " (default mode)" if multimodal_mode == "base64" else ""
+    url_default_note = " (default mode)" if multimodal_mode == "url" else ""
+    
+    tools.extend([
+        Tool(
+            name="get_multimodal_asset_base64",
+            description=f"Fetch a multimodal asset image from LightRAG and return it as base64-encoded data{base64_default_note}. Use this for images extracted by MinerU during multimodal document processing. The file_path is the relative path within the multimodal output directory (e.g. doc/auto/images/figure1.png). Requires ENABLE_MULTIMODAL=true on the LightRAG server.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "file_path": {
+                        "type": "string",
+                        "description": "Relative path to the image file within the multimodal output directory, e.g. doc/auto/images/figure1.png"
+                    }
+                },
+                "required": ["file_path"]
+            }
+        ),
+        Tool(
+            name="get_multimodal_asset_url",
+            description=f"Get the full authenticated URL for a multimodal asset image from LightRAG{url_default_note}. Returns a URL that can be used directly in img tags or markdown. The file_path is the relative path within the multimodal output directory (e.g. doc/auto/images/figure1.png). Requires ENABLE_MULTIMODAL=true on the LightRAG server.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "file_path": {
+                        "type": "string",
+                        "description": "Relative path to the image file within the multimodal output directory, e.g. doc/auto/images/figure1.png"
+                    }
+                },
+                "required": ["file_path"]
+            }
+        ),
+    ])
+    
     logger.info("TOOLS CREATION COMPLETED:")
     logger.info(f"  - Total tools created: {len(tools)}")
     logger.info(f"  - Tools list type: {type(tools)}")
@@ -673,6 +711,11 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
     logger.info(f"  - System Management Tools: {len(system_tools)}")
     for tool in system_tools:
         logger.info(f"    - {tool.name}")
+    multimodal_tools = [t for t in tools if 'multimodal' in t.name]
+    logger.info(f"  - Multimodal Asset Tools: {len(multimodal_tools)}")
+    for tool in multimodal_tools:
+        logger.info(f"    - {tool.name}")
+    logger.info(f"  - MULTIMODAL_ASSET_MODE: {multimodal_mode}")
     
     # Comprehensive validation
     logger.info("TOOLS VALIDATION:")
@@ -2079,6 +2122,104 @@ async def handle_call_tool(self, request: CallToolRequest) -> dict:
                 logger.error(f"  - Exception type: {type(e)}")
                 logger.error(f"  - Exception message: {str(e)}")
                 logger.error(f"  - Exception args: {e.args}")
+                import traceback
+                logger.error(f"  - Full traceback: {traceback.format_exc()}")
+                raise
+        
+        # Multimodal Asset Tools (2 tools)
+        elif tool_name == "get_multimodal_asset_base64":
+            logger.info("EXECUTING GET_MULTIMODAL_ASSET_BASE64 TOOL:")
+            logger.info(f"  - Tool: {tool_name}")
+            logger.info(f"  - Client type: {type(lightrag_client)}")
+            logger.info(f"  - Client base_url: {lightrag_client.base_url}")
+            logger.info(f"  - Raw arguments: {arguments}")
+            
+            file_path = arguments.get("file_path", "")
+            logger.info(f"GET_MULTIMODAL_ASSET_BASE64 PARAMETERS:")
+            logger.info(f"  - file_path: '{file_path}'")
+            logger.info(f"  - file_path type: {type(file_path)}")
+            
+            if not file_path or not file_path.strip():
+                logger.error("GET_MULTIMODAL_ASSET_BASE64 VALIDATION ERROR:")
+                logger.error("  - File path is empty or whitespace only")
+                raise LightRAGValidationError("File path cannot be empty")
+            
+            logger.info("  - Parameter validation passed")
+            logger.info("  - Calling lightrag_client.get_multimodal_asset_base64()...")
+            
+            try:
+                result = await lightrag_client.get_multimodal_asset_base64(file_path)
+                logger.info("GET_MULTIMODAL_ASSET_BASE64 SUCCESS:")
+                logger.info(f"  - Result type: {type(result)}")
+                logger.info(f"  - File path: {result.file_path}")
+                logger.info(f"  - MIME type: {result.mime_type}")
+                logger.info(f"  - Size: {result.size_bytes} bytes")
+                logger.info(f"  - Base64 data length: {len(result.data)} characters")
+                
+                # Return MCP ImageContent with base64 data + TextContent with metadata
+                response = {
+                    "content": [
+                        {
+                            "type": "image",
+                            "data": result.data,
+                            "mimeType": result.mime_type,
+                        },
+                        {
+                            "type": "text",
+                            "text": json.dumps({
+                                "file_path": result.file_path,
+                                "mime_type": result.mime_type,
+                                "size_bytes": result.size_bytes,
+                            }, indent=2)
+                        }
+                    ]
+                }
+                logger.info(f"  - ImageContent response created")
+                return response
+            except Exception as e:
+                logger.error("GET_MULTIMODAL_ASSET_BASE64 FAILED:")
+                logger.error(f"  - Exception type: {type(e)}")
+                logger.error(f"  - Exception message: {str(e)}")
+                logger.error(f"  - File path: {file_path}")
+                import traceback
+                logger.error(f"  - Full traceback: {traceback.format_exc()}")
+                raise
+        
+        elif tool_name == "get_multimodal_asset_url":
+            logger.info("EXECUTING GET_MULTIMODAL_ASSET_URL TOOL:")
+            logger.info(f"  - Tool: {tool_name}")
+            logger.info(f"  - Client type: {type(lightrag_client)}")
+            logger.info(f"  - Client base_url: {lightrag_client.base_url}")
+            logger.info(f"  - Raw arguments: {arguments}")
+            
+            file_path = arguments.get("file_path", "")
+            logger.info(f"GET_MULTIMODAL_ASSET_URL PARAMETERS:")
+            logger.info(f"  - file_path: '{file_path}'")
+            logger.info(f"  - file_path type: {type(file_path)}")
+            
+            if not file_path or not file_path.strip():
+                logger.error("GET_MULTIMODAL_ASSET_URL VALIDATION ERROR:")
+                logger.error("  - File path is empty or whitespace only")
+                raise LightRAGValidationError("File path cannot be empty")
+            
+            logger.info("  - Parameter validation passed")
+            logger.info("  - Calling lightrag_client.get_multimodal_asset_url()...")
+            
+            try:
+                result = await lightrag_client.get_multimodal_asset_url(file_path)
+                logger.info("GET_MULTIMODAL_ASSET_URL SUCCESS:")
+                logger.info(f"  - Result type: {type(result)}")
+                logger.info(f"  - File path: {result.file_path}")
+                logger.info(f"  - URL: {result.url}")
+                
+                response = _create_success_response(result, tool_name)
+                logger.info(f"  - Success response created")
+                return response
+            except Exception as e:
+                logger.error("GET_MULTIMODAL_ASSET_URL FAILED:")
+                logger.error(f"  - Exception type: {type(e)}")
+                logger.error(f"  - Exception message: {str(e)}")
+                logger.error(f"  - File path: {file_path}")
                 import traceback
                 logger.error(f"  - Full traceback: {traceback.format_exc()}")
                 raise

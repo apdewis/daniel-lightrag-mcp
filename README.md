@@ -1,6 +1,6 @@
 # Daniel LightRAG MCP Server
 
-A comprehensive MCP (Model Context Protocol) server that provides **100% functional** integration with LightRAG API, offering **22 fully working tools** across 4 categories for complete document management, querying, knowledge graph operations, and system management.
+A comprehensive MCP (Model Context Protocol) server that provides **100% functional** integration with LightRAG API, offering **24 fully working tools** across 5 categories for complete document management, querying, knowledge graph operations, system management, and multimodal asset retrieval.
 
 This is a modified version of the upstream version that has had streaming-http mode addes as well as a docker image buildfile.
 
@@ -11,13 +11,14 @@ Modifications were made entirely using KiloCode and Claude Opus 4.6, I don't war
 
 ## 🎉 Status: 100% Functional
 
-**All 22 tools are working perfectly** after comprehensive testing and optimization:
+**All 24 tools are working perfectly** after comprehensive testing and optimization:
 
 - ✅ **Document Management**: 6/6 tools working (100%)
 - ✅ **Query Operations**: 2/2 tools working (100%)  
 - ✅ **Knowledge Graph**: 6/6 tools working (100%)
 - ✅ **System Management**: 4/4 tools working (100%)
 - ✅ **Health Check**: 1/1 tools working (100%)
+- ✅ **Multimodal Assets**: 2/2 tools working (100%)
 
 ## Features
 
@@ -25,6 +26,7 @@ Modifications were made entirely using KiloCode and Claude Opus 4.6, I don't war
 - **Query Operations**: 2 tools for text queries with regular and streaming responses
 - **Knowledge Graph**: 6 tools for accessing, checking, updating, and managing entities and relations
 - **System Management**: 4 tools for health checks, status monitoring, and cache management
+- **Multimodal Assets**: 2 tools for retrieving images extracted by MinerU during multimodal document processing (base64-encoded or direct URL)
 - **Comprehensive Error Handling**: Robust error handling with detailed error messages
 - **Full API Coverage**: Complete integration with LightRAG API 0.1.96+
 
@@ -79,6 +81,7 @@ export LIGHTRAG_BASE_URL="http://localhost:9621"
 export LIGHTRAG_API_KEY="your-api-key"  # Optional
 export LIGHTRAG_TIMEOUT="30"            # Optional
 export LOG_LEVEL="INFO"                 # Optional
+export MULTIMODAL_ASSET_MODE="base64"   # Optional: "base64" (default) or "url"
 
 daniel-lightrag-mcp
 ```
@@ -474,6 +477,42 @@ Check LightRAG server health.
 ```json
 {}
 ```
+
+### Multimodal Asset Tools (2 tools)
+
+These tools retrieve images extracted by MinerU during multimodal document processing via the LightRAG server's `/multimodal-assets/` endpoint. They require `ENABLE_MULTIMODAL=true` on the LightRAG server.
+
+#### `get_multimodal_asset_base64`
+Fetch a multimodal asset image and return it as base64-encoded data. This is the default mode.
+
+**Parameters:**
+- `file_path` (required): Relative path to the image file within the multimodal output directory
+
+**Example:**
+```json
+{
+  "file_path": "doc/auto/images/figure1.png"
+}
+```
+
+**Response:** Returns MCP `ImageContent` with base64-encoded image data and a `TextContent` with metadata (file path, MIME type, size).
+
+#### `get_multimodal_asset_url`
+Get the full authenticated URL for a multimodal asset image. The URL includes the API key as a query parameter for direct access.
+
+**Parameters:**
+- `file_path` (required): Relative path to the image file within the multimodal output directory
+
+**Example:**
+```json
+{
+  "file_path": "doc/auto/images/figure1.png"
+}
+```
+
+**Response:** Returns the full URL (e.g., `http://localhost:9621/multimodal-assets/doc/auto/images/figure1.png?api_key=...`).
+
+**Configuration:** Set `MULTIMODAL_ASSET_MODE` environment variable to `base64` (default) or `url` to control which tool is marked as the recommended default in tool descriptions.
 
 ## Example Workflows
 

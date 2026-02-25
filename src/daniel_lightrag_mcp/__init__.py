@@ -74,4 +74,7 @@ __all__ = [
     "Body_login_login_post",
     "DocStatusResponse",
     "DocsStatusesResponse",
+    # Multimodal asset models
+    "MultimodalAssetBase64Response",
+    "MultimodalAssetURLResponse",
 ]

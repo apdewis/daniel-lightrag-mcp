@@ -17,7 +17,9 @@ from .models import (
     DeleteDocByIdResponse, ClearDocumentsResponse, PipelineStatusResponse, TrackStatusResponse,
     StatusCountsResponse, ClearCacheResponse, DeletionResult, QueryResponse, GraphResponse,
     LabelsResponse, EntityExistsResponse, EntityUpdateResponse, RelationUpdateResponse,
-    HealthResponse, TextDocument
+    HealthResponse, TextDocument,
+    # Multimodal asset models
+    MultimodalAssetBase64Response, MultimodalAssetURLResponse,
 )
 
 
@@ -505,3 +507,129 @@ class LightRAGClient:
         """Check LightRAG server health."""
         response_data = await self._make_request("GET", "/health")
         return HealthResponse(**response_data)
+    
+    # Multimodal Asset Methods (2 methods)
+    
+    async def _make_raw_request(
+        self,
+        method: str,
+        endpoint: str,
+        params: Optional[Dict[str, Any]] = None,
+    ) -> tuple:
+        """Make HTTP request expecting raw binary response.
+        
+        Returns:
+            Tuple of (response_bytes, content_type)
+        """
+        url = f"{self.base_url}{endpoint}"
+        
+        self.logger.debug(f"Making raw {method} request to {url}")
+        if params:
+            self.logger.debug(f"Request params: {params}")
+        
+        try:
+            if method.upper() == "GET":
+                response = await self.client.get(url, params=params)
+            else:
+                error_msg = f"Unsupported HTTP method for raw request: {method}"
+                self.logger.error(error_msg)
+                raise LightRAGError(error_msg)
+            
+            self.logger.debug(f"Raw response status: {response.status_code}")
+            
+            response.raise_for_status()
+            
+            content_type = response.headers.get("content-type", "application/octet-stream")
+            self.logger.info(f"Successfully completed raw {method} request to {endpoint}, content-type: {content_type}, size: {len(response.content)} bytes")
+            return response.content, content_type
+            
+        except httpx.HTTPStatusError as e:
+            self.logger.error(f"HTTP error {e.response.status_code} for raw {method} {url}: {e.response.text}")
+            raise self._map_http_error(e.response.status_code, e.response.text)
+        except httpx.ConnectError as e:
+            error_msg = f"Connection failed to {url}: {str(e)}"
+            self.logger.error(error_msg)
+            raise LightRAGConnectionError(error_msg)
+        except httpx.TimeoutException as e:
+            error_msg = f"Request timeout for raw {method} {url}: {str(e)}"
+            self.logger.error(error_msg)
+            raise LightRAGTimeoutError(error_msg)
+        except httpx.RequestError as e:
+            error_msg = f"Request failed for raw {method} {url}: {str(e)}"
+            self.logger.error(error_msg)
+            raise LightRAGConnectionError(error_msg)
+        except Exception as e:
+            if isinstance(e, LightRAGError):
+                raise
+            error_msg = f"Unexpected error during raw {method} request to {url}: {str(e)}"
+            self.logger.error(error_msg)
+            raise LightRAGError(error_msg)
+    
+    async def get_multimodal_asset_base64(self, file_path: str) -> MultimodalAssetBase64Response:
+        """Fetch a multimodal asset image and return it as base64-encoded data.
+        
+        Args:
+            file_path: Relative path to the image file within the multimodal output directory.
+        
+        Returns:
+            MultimodalAssetBase64Response with base64-encoded image data and metadata.
+        """
+        import base64
+        
+        self.logger.info(f"Fetching multimodal asset as base64: {file_path}")
+        
+        if not file_path or not file_path.strip():
+            raise LightRAGValidationError("File path cannot be empty")
+        
+        # Build query params with authentication
+        params: Dict[str, Any] = {}
+        if self.api_key:
+            params["api_key"] = self.api_key
+        
+        try:
+            raw_bytes, content_type = await self._make_raw_request(
+                "GET", f"/multimodal-assets/{file_path}", params=params if params else None
+            )
+            
+            encoded = base64.b64encode(raw_bytes).decode("utf-8")
+            
+            result = MultimodalAssetBase64Response(
+                file_path=file_path,
+                mime_type=content_type,
+                data=encoded,
+                size_bytes=len(raw_bytes),
+            )
+            self.logger.info(f"Successfully fetched multimodal asset: {file_path} ({len(raw_bytes)} bytes, {content_type})")
+            return result
+        except Exception as e:
+            self.logger.error(f"Failed to fetch multimodal asset as base64: {file_path}: {str(e)}")
+            if isinstance(e, LightRAGError):
+                raise
+            raise LightRAGError(f"Multimodal asset retrieval failed: {str(e)}")
+    
+    async def get_multimodal_asset_url(self, file_path: str) -> MultimodalAssetURLResponse:
+        """Construct the full authenticated URL for a multimodal asset.
+        
+        Args:
+            file_path: Relative path to the image file within the multimodal output directory.
+        
+        Returns:
+            MultimodalAssetURLResponse with the full authenticated URL.
+        """
+        from urllib.parse import urlencode
+        
+        self.logger.info(f"Constructing multimodal asset URL: {file_path}")
+        
+        if not file_path or not file_path.strip():
+            raise LightRAGValidationError("File path cannot be empty")
+        
+        base = f"{self.base_url}/multimodal-assets/{file_path}"
+        if self.api_key:
+            base += f"?{urlencode({'api_key': self.api_key})}"
+        
+        result = MultimodalAssetURLResponse(
+            file_path=file_path,
+            url=base,
+        )
+        self.logger.info(f"Constructed multimodal asset URL for: {file_path}")
+        return result

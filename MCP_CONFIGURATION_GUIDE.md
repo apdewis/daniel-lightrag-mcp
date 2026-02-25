@@ -118,6 +118,7 @@ For other MCP-compatible clients, use the same basic structure:
 | `LOG_LEVEL` | Logging level | `INFO` | `DEBUG` |
 | `MAX_RETRIES` | Maximum retry attempts | `3` | `5` |
 | `RETRY_DELAY` | Delay between retries (seconds) | `1` | `2` |
+| `MULTIMODAL_ASSET_MODE` | Default mode for multimodal asset retrieval | `base64` | `url` |
 
 ### Setting Environment Variables
 

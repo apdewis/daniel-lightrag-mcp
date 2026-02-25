@@ -1,7 +1,7 @@
 # Daniel LightRAG MCP Server - Configuration Guide
 
 ## Overview
-This MCP server provides comprehensive integration with your local LightRAG server, offering 22 tools across 4 categories for complete document management, querying, knowledge graph operations, and system management.
+This MCP server provides comprehensive integration with your local LightRAG server, offering 24 tools across 5 categories for complete document management, querying, knowledge graph operations, system management, and multimodal asset retrieval.
 
 ## Prerequisites
 
@@ -89,6 +89,7 @@ curl http://localhost:9621/health
 - `MCP_TRANSPORT`: Transport type - `stdio` or `streamable-http` (default: "streamable-http")
 - `MCP_HOST`: Bind address for HTTP transport (default: "0.0.0.0")
 - `MCP_PORT`: Port for HTTP transport (default: 8080)
+- `MULTIMODAL_ASSET_MODE`: Default mode for multimodal asset retrieval - `base64` or `url` (default: "base64")
 
 ### Transport Selection
 
